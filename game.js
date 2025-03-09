@@ -1,6 +1,7 @@
 // Game constants
 const GRAVITY = 0.25;
 const JUMP_FORCE = -8;
+const SUPER_JUMP_MULTIPLIER = 3;  // 大跳倍率
 const MOVEMENT_SPEED = 3.5;
 const PLATFORM_HEIGHT = 20;
 const TRAIL_LENGTH = 10; // Number of trail segments
@@ -60,7 +61,8 @@ let keys = {
     left: false,
     right: false,
     up: false,
-    down: false
+    down: false,
+    shift: false  // 添加shift键状态
 };
 
 // Initialize the game
@@ -339,6 +341,9 @@ function setupControls() {
             case 'ArrowDown':
                 keys.down = true;
                 break;
+            case 'Shift':
+                keys.shift = true;
+                break;
         }
     });
     
@@ -356,12 +361,15 @@ function setupControls() {
             case 'ArrowDown':
                 keys.down = false;
                 break;
+            case 'Shift':
+                keys.shift = false;
+                break;
         }
     });
     
-    // Prevent default behavior for arrow keys
+    // Prevent default behavior for arrow keys and shift
     window.addEventListener('keydown', (e) => {
-        if(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+        if(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Shift', ' '].includes(e.key)) {
             e.preventDefault();
         }
     });
@@ -401,9 +409,16 @@ function update() {
         player.velocityX = 0;
     }
     
-    // Handle jumping
+    // Handle jumping with super jump
     if (keys.up && !player.isJumping) {
-        player.velocityY = JUMP_FORCE;
+        // 如果同时按下shift，触发大跳
+        if (keys.shift) {
+            player.velocityY = JUMP_FORCE * SUPER_JUMP_MULTIPLIER;
+            // 添加大跳特效
+            addSuperJumpEffect();
+        } else {
+            player.velocityY = JUMP_FORCE;
+        }
         player.isJumping = true;
     }
     
@@ -744,4 +759,39 @@ function showSavePrompt(platform) {
 }
 
 // Add any other necessary functions here
+// ... 
+
+// 添加大跳特效函数
+function addSuperJumpEffect() {
+    // 在玩家周围添加圆形扩散效果
+    const effect = {
+        x: player.x + player.width / 2,
+        y: player.y + player.height / 2,
+        radius: 10,
+        alpha: 1,
+        maxRadius: 100
+    };
+    
+    // 创建动画帧
+    function animate() {
+        if (effect.radius < effect.maxRadius) {
+            effect.radius += 5;
+            effect.alpha = 1 - (effect.radius / effect.maxRadius);
+            
+            ctx.save();
+            ctx.translate(0, -cameraY);
+            ctx.beginPath();
+            ctx.arc(effect.x, effect.y, effect.radius, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(255, 215, 0, ${effect.alpha})`;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.restore();
+            
+            requestAnimationFrame(animate);
+        }
+    }
+    
+    animate();
+}
+
 // ... 
