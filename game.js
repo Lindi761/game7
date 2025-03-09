@@ -10,6 +10,7 @@ const RESET_DELAY = 2000; // 重置延迟时间（毫秒）
 const FLOOR_HEIGHT = 40; // 地板高度
 const SCORE_POPUP_DURATION = 1000; // 得分提示显示时间（毫秒）
 const SCORE_HEIGHT = 50; // 每上升这么多像素得1分
+const PLATFORMS_PER_BED = 20; // 每隔多少个平台生成一张床
 
 // Game state
 let gameRunning = false;
@@ -21,6 +22,7 @@ let cameraY = 0;
 let isResetting = false;
 let resetTimeout = null;
 let scorePopups = []; // 存储得分动画
+let platformCount = 0; // 用于跟踪平台数量
 
 // Game elements
 let canvas;
@@ -101,8 +103,8 @@ function resizeCanvas() {
 
 // Create platforms
 function createPlatforms() {
-    // 清空现有平台
     platforms = [];
+    platformCount = 0; // 重置平台计数
     
     // 创建地板
     platforms.push({
@@ -122,12 +124,16 @@ function createPlatforms() {
         const platformWidth = canvas.width * (0.2 + Math.random() * 0.3);
         const platformX = Math.random() * (canvas.width - platformWidth);
         
+        platformCount++; // 增加平台计数
+        const isBed = platformCount % PLATFORMS_PER_BED === 0; // 每隔20个平台生成一张床
+        
         platforms.push({
             x: platformX,
             y: platformY,
             width: platformWidth,
             height: PLATFORM_HEIGHT,
-            color: '#2ecc71',
+            color: isBed ? '#FF69B4' : '#2ecc71', // 床使用粉色
+            isBed: isBed,
             isFloor: false
         });
         
@@ -137,21 +143,23 @@ function createPlatforms() {
 
 // Generate new platforms as player moves up
 function generateNewPlatforms() {
-    // 删除已经离开视口很远的平台，但保留地板
     platforms = platforms.filter(platform => 
         platform.isFloor || platform.y < player.y + canvas.height + VIEWPORT_PADDING);
     
-    // 在上方生成新的平台
     while (lastPlatformY > player.y - VIEWPORT_PADDING) {
         const platformWidth = canvas.width * (0.2 + Math.random() * 0.3);
         const platformX = Math.random() * (canvas.width - platformWidth);
+        
+        platformCount++; // 增加平台计数
+        const isBed = platformCount % PLATFORMS_PER_BED === 0; // 每隔20个平台生成一张床
         
         platforms.push({
             x: platformX,
             y: lastPlatformY,
             width: platformWidth,
             height: PLATFORM_HEIGHT,
-            color: '#2ecc71',
+            color: isBed ? '#FF69B4' : '#2ecc71', // 床使用粉色
+            isBed: isBed,
             isFloor: false
         });
         
@@ -382,6 +390,38 @@ function draw() {
                 ctx.lineTo(x + 20, platform.y);
                 ctx.stroke();
             }
+        } else if (platform.isBed) {
+            // 绘制床
+            // 床垫
+            ctx.fillStyle = '#FF69B4';
+            ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+            
+            // 床单纹理
+            ctx.strokeStyle = '#FFB6C1';
+            ctx.lineWidth = 2;
+            for (let x = platform.x; x < platform.x + platform.width; x += 20) {
+                ctx.beginPath();
+                ctx.moveTo(x, platform.y);
+                ctx.lineTo(x + 10, platform.y + platform.height);
+                ctx.stroke();
+            }
+            
+            // 枕头
+            ctx.fillStyle = '#FFF';
+            const pillowWidth = platform.width * 0.2;
+            ctx.fillRect(platform.x + 5, platform.y - 5, pillowWidth, 10);
+
+            // 添加"休息点"文字
+            ctx.font = 'bold 16px Arial';
+            ctx.fillStyle = '#FFF'; // 白色文字
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.strokeStyle = '#FF1493'; // 深粉色描边
+            ctx.lineWidth = 3;
+            const textX = platform.x + platform.width / 2;
+            const textY = platform.y + platform.height / 2;
+            ctx.strokeText('休息点', textX, textY);
+            ctx.fillText('休息点', textX, textY);
         } else {
             ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
         }
