@@ -13,6 +13,46 @@ const SCORE_POPUP_DURATION = 1000; // 得分提示显示时间（毫秒）
 const SCORE_HEIGHT = 50; // 每上升这么多像素得1分
 const PLATFORMS_PER_BED = 20; // 每隔多少个平台生成一张床
 
+// 宝物相关常量
+const TREASURE_TYPES = {
+    COIN: { 
+        value: 1, 
+        color: '#FFD700', 
+        radius: 8, 
+        probability: 0.5,
+        symbol: '💰'
+    },
+    GEM: { 
+        value: 5, 
+        color: '#FF1493', 
+        radius: 10, 
+        probability: 0.3,
+        symbol: '💎'
+    },
+    CROWN: { 
+        value: 10, 
+        color: '#9400D3', 
+        radius: 12, 
+        probability: 0.15,
+        symbol: '👑'
+    },
+    CHEST: { 
+        value: 20, 
+        color: '#FF4500', 
+        radius: 15, 
+        probability: 0.05,
+        symbol: '🎁'
+    }
+};
+
+// 连击奖励系统
+const COMBO_THRESHOLDS = {
+    5: 1.5,   // 5连击：1.5倍金币
+    10: 2,    // 10连击：2倍金币
+    20: 3,    // 20连击：3倍金币
+    50: 5     // 50连击：5倍金币
+};
+
 // 计算最大跳跃高度和距离
 const MAX_JUMP_HEIGHT = Math.pow(JUMP_FORCE, 2) / (2 * GRAVITY); // 根据物理公式计算最大跳跃高度
 const MAX_JUMP_DISTANCE = MOVEMENT_SPEED * (-2 * JUMP_FORCE / GRAVITY); // 最大水平跳跃距离
@@ -37,19 +77,29 @@ const PLATFORM_SCORES = {
     [PLATFORM_TYPES.BONUS]: 2      // 奖励跳板2分
 };
 
+// 宝物生成相关常量
+const TREASURE_SPAWN_INTERVAL = 5;  // 每5个平台生成一个宝物
+
 // Game state
 let gameRunning = false;
 let animationFrameId;
 let score = 0;
 let highScore = 0;
+let coins = 0;  // 添加金币计数
+let combo = 0;              // 当前连击数
+let comboTimer = 0;         // 连击计时器
+let lastCollectTime = 0;    // 上次收集宝物的时间
+const COMBO_TIMEOUT = 3000; // 连击超时时间（毫秒）
 let lastPlatformY = 0;
 let cameraY = 0;
 let isResetting = false;
 let resetTimeout = null;
 let scorePopups = []; // 存储得分动画
+let coinPopups = [];  // 添加金币收集动画
 let platformCount = 0; // 用于跟踪平台数量
 let visitedPlatforms = new Set();
 let showingSavePrompt = false;
+let treasures = [];  // 存储所有宝物
 
 // Game elements
 let canvas;
@@ -64,6 +114,9 @@ let keys = {
     down: false,
     shift: false  // 添加shift键状态
 };
+
+let lastTreasureSpawnCount = 0;  // 上次生成宝物时的平台计数
+let lastTreasureType = null;     // 上次生成的宝物类型
 
 // Initialize the game
 function init() {
@@ -134,6 +187,8 @@ function createPlatforms() {
     platforms = [];
     platformCount = 0;
     visitedPlatforms.clear();
+    lastTreasureSpawnCount = 0;
+    lastTreasureType = null;
     
     // 创建地板
     platforms.push({
@@ -221,6 +276,21 @@ function createPlatforms() {
         platformY -= verticalGap;
         lastPlatformY = platformY;
     }
+    
+    platforms.forEach(platform => {
+        if (!platform.isFloor) {
+            // 每5个平台随机选择一个生成宝物
+            if (platformCount % TREASURE_SPAWN_INTERVAL === 0) {
+                // 在这5个平台中随机选择一个位置生成宝物
+                const randomOffset = Math.floor(Math.random() * TREASURE_SPAWN_INTERVAL);
+                const targetPlatform = platforms[platforms.length - randomOffset - 1];
+                if (targetPlatform && !targetPlatform.isFloor) {
+                    generateTreasure(targetPlatform);
+                    lastTreasureSpawnCount = platformCount;
+                }
+            }
+        }
+    });
 }
 
 // Generate new platforms
@@ -290,6 +360,17 @@ function generateNewPlatforms() {
         
         lastPlatformX = platformX;
         lastPlatformY -= verticalGap;
+        
+        // 每5个平台随机选择一个生成宝物
+        if (platformCount % TREASURE_SPAWN_INTERVAL === 0) {
+            // 在最近生成的5个平台中随机选择一个位置生成宝物
+            const recentPlatforms = platforms.slice(-TREASURE_SPAWN_INTERVAL);
+            const randomPlatform = recentPlatforms[Math.floor(Math.random() * recentPlatforms.length)];
+            if (randomPlatform && !randomPlatform.isFloor) {
+                generateTreasure(randomPlatform);
+                lastTreasureSpawnCount = platformCount;
+            }
+        }
     }
 }
 
@@ -514,6 +595,80 @@ function update() {
         width: player.width,
         height: player.height
     });
+    
+    // 更新连击计时器
+    if (combo > 0) {
+        comboTimer = Date.now() - lastCollectTime;
+        if (comboTimer > COMBO_TIMEOUT) {
+            // 连击中断
+            combo = 0;
+            showComboBreak();
+        }
+    }
+    
+    // 更新宝物动画和检测碰撞
+    treasures.forEach(treasure => {
+        if (!treasure.collected) {
+            // 使宝物上下浮动
+            treasure.floatOffset = Math.sin(Date.now() / 500) * 5;
+            
+            // 检测玩家是否收集到宝物
+            const dx = (player.x + player.width / 2) - treasure.x;
+            const dy = (player.y + player.height / 2) - (treasure.y + treasure.floatOffset);
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < player.width / 2 + treasure.radius) {
+                treasure.collected = true;
+                
+                // 更新连击
+                const now = Date.now();
+                if (now - lastCollectTime < COMBO_TIMEOUT) {
+                    combo++;
+                } else {
+                    combo = 1;
+                }
+                lastCollectTime = now;
+                
+                // 计算连击加成
+                let comboMultiplier = 1;
+                for (const [threshold, multiplier] of Object.entries(COMBO_THRESHOLDS)) {
+                    if (combo >= parseInt(threshold)) {
+                        comboMultiplier = multiplier;
+                    }
+                }
+                
+                // 应用连击加成到金币值
+                const baseValue = treasure.value;
+                const finalValue = Math.round(baseValue * comboMultiplier);
+                coins += finalValue;
+                
+                // 添加金币收集动画
+                coinPopups.push({
+                    x: treasure.x,
+                    y: treasure.y,
+                    value: finalValue,
+                    age: 0,
+                    color: treasure.color,
+                    symbol: treasure.symbol,
+                    combo: combo,
+                    multiplier: comboMultiplier
+                });
+                
+                // 播放收集特效
+                showCollectEffect(treasure);
+                
+                // 更新UI
+                updateCoins();
+            }
+        }
+    });
+    
+    // 更新金币收集动画
+    coinPopups = coinPopups.filter(popup => {
+        popup.age += 16;
+        popup.y -= 2;
+        return popup.age < SCORE_POPUP_DURATION;
+    });
 }
 
 // Draw game elements
@@ -629,7 +784,148 @@ function draw() {
         ctx.fillText(`+${popup.score}`, popup.x, popup.y);
     }
     
+    // 绘制宝物
+    treasures.forEach(treasure => {
+        if (!treasure.collected) {
+            // 绘制光晕效果
+            const glowSize = 5 + Math.sin(Date.now() / 300) * 2;
+            ctx.beginPath();
+            ctx.arc(
+                treasure.x,
+                treasure.y + treasure.floatOffset,
+                treasure.radius + glowSize,
+                0,
+                Math.PI * 2
+            );
+            ctx.fillStyle = `rgba(${hexToRgb(treasure.color)}, 0.3)`;
+            ctx.fill();
+            
+            // 绘制宝物主体
+            ctx.beginPath();
+            ctx.arc(
+                treasure.x,
+                treasure.y + treasure.floatOffset,
+                treasure.radius,
+                0,
+                Math.PI * 2
+            );
+            ctx.fillStyle = treasure.color;
+            ctx.fill();
+            
+            // 绘制宝物符号
+            ctx.font = `${treasure.radius * 1.5}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(
+                treasure.symbol,
+                treasure.x,
+                treasure.y + treasure.floatOffset
+            );
+            
+            // 添加闪光效果
+            const shimmerAlpha = (Math.sin(Date.now() / 200) + 1) / 2;
+            ctx.strokeStyle = `rgba(255, 255, 255, ${shimmerAlpha})`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+    });
+    
+    // 绘制金币收集动画
+    coinPopups.forEach(popup => {
+        const alpha = 1 - (popup.age / SCORE_POPUP_DURATION);
+        ctx.font = 'bold 20px Arial';
+        
+        // 绘制数值
+        ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
+        ctx.strokeStyle = `rgba(0, 0, 0, ${alpha})`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 3;
+        
+        // 如果有连击加成，显示额外信息
+        if (popup.combo > 1) {
+            const comboText = `${popup.combo}连击!`;
+            const multiplierText = `x${popup.multiplier}`;
+            
+            ctx.strokeText(comboText, popup.x, popup.y - 20);
+            ctx.fillText(comboText, popup.x, popup.y - 20);
+            
+            ctx.strokeText(`${popup.symbol} +${popup.value}`, popup.x, popup.y);
+            ctx.fillText(`${popup.symbol} +${popup.value}`, popup.x, popup.y);
+            
+            ctx.strokeText(multiplierText, popup.x, popup.y + 20);
+            ctx.fillText(multiplierText, popup.x, popup.y + 20);
+        } else {
+            ctx.strokeText(`${popup.symbol} +${popup.value}`, popup.x, popup.y);
+            ctx.fillText(`${popup.symbol} +${popup.value}`, popup.x, popup.y);
+        }
+    });
+    
+    // 绘制当前连击数
+    if (combo > 0) {
+        const comboAlpha = Math.max(0, 1 - comboTimer / COMBO_TIMEOUT);
+        ctx.font = 'bold 32px Arial';
+        ctx.fillStyle = `rgba(255, 165, 0, ${comboAlpha})`;
+        ctx.strokeStyle = `rgba(0, 0, 0, ${comboAlpha})`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'top';
+        ctx.lineWidth = 3;
+        ctx.strokeText(`${combo}连击!`, canvas.width - 20, 20);
+        ctx.fillText(`${combo}连击!`, canvas.width - 20, 20);
+    }
+    
     ctx.restore();
+
+    // 在画布上绘制金币数量（恢复正常坐标系后绘制，这样就不会随相机移动）
+    let comboMultiplier = 1;
+    for (const [threshold, multiplier] of Object.entries(COMBO_THRESHOLDS)) {
+        if (combo >= parseInt(threshold)) {
+            comboMultiplier = multiplier;
+        }
+    }
+    
+    // 绘制金币图标和数量
+    ctx.font = 'bold 24px Arial';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.lineWidth = 3;
+    
+    // 绘制金币符号
+    const coinSymbol = '💰';
+    const padding = 20;
+    const baseY = 20;
+    
+    // 绘制金币数量背景
+    const coinText = `${coins}`;
+    const comboText = combo >= 5 ? ` x${comboMultiplier}` : '';
+    const textWidth = ctx.measureText(coinSymbol + ' ' + coinText + comboText).width + 20;
+    
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.roundRect(canvas.width - textWidth - padding, baseY - 5, textWidth + 10, 34, 10);
+    ctx.fill();
+    
+    // 绘制文本
+    ctx.fillStyle = '#FFD700';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+    let x = canvas.width - padding;
+    
+    // 如果有连击加成，显示倍率
+    if (combo >= 5) {
+        ctx.fillStyle = '#FFA500';
+        ctx.strokeText(comboText, x, baseY);
+        ctx.fillText(comboText, x, baseY);
+        x -= ctx.measureText(comboText).width + 5;
+    }
+    
+    // 显示金币数量
+    ctx.fillStyle = '#FFD700';
+    ctx.strokeText(coinText, x, baseY);
+    ctx.fillText(coinText, x, baseY);
+    x -= ctx.measureText(coinText).width + 5;
+    
+    // 显示金币图标
+    ctx.strokeText(coinSymbol, x, baseY);
+    ctx.fillText(coinSymbol, x, baseY);
 
     // 如果正在重置，显示提示文字
     if (isResetting) {
@@ -738,6 +1034,11 @@ function resetGame() {
         width: player.width,
         height: player.height
     }));
+    
+    treasures = [];
+    coins = 0;
+    coinPopups = [];
+    updateCoins();
 }
 
 // Game loop
@@ -792,6 +1093,110 @@ function addSuperJumpEffect() {
     }
     
     animate();
+}
+
+// 更新金币显示，移除DOM元素版本
+function updateCoins() {
+    // 移除旧的DOM元素（如果存在）
+    const oldCoinsElement = document.getElementById('coins');
+    if (oldCoinsElement) {
+        oldCoinsElement.remove();
+    }
+}
+
+// 生成宝物的函数
+function generateTreasure(platform) {
+    let availableTypes = Object.keys(TREASURE_TYPES).filter(type => type !== lastTreasureType);
+    
+    // 如果没有其他类型可选，重置过滤器
+    if (availableTypes.length === 0) {
+        availableTypes = Object.keys(TREASURE_TYPES);
+    }
+    
+    // 根据高度增加更好宝物的概率
+    const heightProgress = Math.min(1, Math.max(0, (platform.y - canvas.height) / (-canvas.height * 2)));
+    
+    // 根据高度调整不同宝物的权重
+    const weights = {
+        COIN: 1 - heightProgress * 0.5,     // 随高度略微降低概率
+        GEM: 0.5 + heightProgress * 0.3,    // 随高度增加概率
+        CROWN: 0.3 + heightProgress * 0.4,  // 随高度显著增加概率
+        CHEST: 0.1 + heightProgress * 0.5   // 随高度大幅增加概率
+    };
+    
+    // 计算总权重
+    const totalWeight = availableTypes.reduce((sum, type) => sum + weights[type], 0);
+    
+    // 随机选择宝物类型
+    let random = Math.random() * totalWeight;
+    let selectedType = availableTypes[0];
+    
+    for (const type of availableTypes) {
+        if (random <= weights[type]) {
+            selectedType = type;
+            break;
+        }
+        random -= weights[type];
+    }
+    
+    lastTreasureType = selectedType;
+    
+    // 创建宝物对象
+    const treasure = {
+        x: platform.x + platform.width / 2,
+        y: platform.y - 30,
+        type: selectedType,
+        ...TREASURE_TYPES[selectedType],
+        collected: false,
+        floatOffset: 0,
+        platformId: platform.id
+    };
+    
+    treasures.push(treasure);
+}
+
+// 辅助函数：显示连击中断效果
+function showComboBreak() {
+    if (combo >= 5) {  // 只有达到5连击以上才显示中断效果
+        coinPopups.push({
+            x: canvas.width - 100,
+            y: 40,
+            value: `${combo}连击结束`,
+            age: 0,
+            color: '#FF4444'
+        });
+    }
+}
+
+// 辅助函数：显示收集特效
+function showCollectEffect(treasure) {
+    // 创建粒子效果
+    const particleCount = 8;
+    const angleStep = (Math.PI * 2) / particleCount;
+    
+    for (let i = 0; i < particleCount; i++) {
+        const angle = i * angleStep;
+        const speed = 2 + Math.random() * 2;
+        
+        coinPopups.push({
+            x: treasure.x + Math.cos(angle) * treasure.radius,
+            y: treasure.y + Math.sin(angle) * treasure.radius,
+            velocityX: Math.cos(angle) * speed,
+            velocityY: Math.sin(angle) * speed,
+            age: 0,
+            radius: 3,
+            color: treasure.color,
+            type: 'particle'
+        });
+    }
+}
+
+// 辅助函数：将十六进制颜色转换为RGB
+function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? 
+        `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` 
+        : '255, 255, 255';
 }
 
 // ... 
