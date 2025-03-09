@@ -1,7 +1,7 @@
 // Game constants
-const GRAVITY = 0.5;
-const JUMP_FORCE = -12;
-const MOVEMENT_SPEED = 5;
+const GRAVITY = 0.25;
+const JUMP_FORCE = -8;
+const MOVEMENT_SPEED = 3.5;
 const PLATFORM_HEIGHT = 20;
 const TRAIL_LENGTH = 10; // Number of trail segments
 const PLATFORM_GAP = 100; // 平台之间的垂直间距
@@ -11,6 +11,30 @@ const FLOOR_HEIGHT = 40; // 地板高度
 const SCORE_POPUP_DURATION = 1000; // 得分提示显示时间（毫秒）
 const SCORE_HEIGHT = 50; // 每上升这么多像素得1分
 const PLATFORMS_PER_BED = 20; // 每隔多少个平台生成一张床
+
+// 计算最大跳跃高度和距离
+const MAX_JUMP_HEIGHT = Math.pow(JUMP_FORCE, 2) / (2 * GRAVITY); // 根据物理公式计算最大跳跃高度
+const MAX_JUMP_DISTANCE = MOVEMENT_SPEED * (-2 * JUMP_FORCE / GRAVITY); // 最大水平跳跃距离
+
+// 调整平台间距常量
+const MIN_PLATFORM_GAP_Y = 60; // 最小垂直间距
+const MAX_PLATFORM_GAP_Y = Math.min(120, MAX_JUMP_HEIGHT * 0.8); // 最大垂直间距，不超过最大跳跃高度的80%
+const MIN_PLATFORM_GAP_X = 50; // 最小水平间距
+const MAX_PLATFORM_GAP_X = Math.min(200, MAX_JUMP_DISTANCE * 0.7); // 最大水平间距，不超过最大跳跃距离的70%
+
+const PLATFORM_TYPES = {
+    NORMAL: 'normal',
+    BED: 'bed',
+    GOLDEN: 'golden',
+    BONUS: 'bonus'
+};
+
+const PLATFORM_SCORES = {
+    [PLATFORM_TYPES.NORMAL]: 1,    // 普通跳板1分
+    [PLATFORM_TYPES.BED]: 5,       // 休息点5分
+    [PLATFORM_TYPES.GOLDEN]: 3,    // 金色跳板3分
+    [PLATFORM_TYPES.BONUS]: 2      // 奖励跳板2分
+};
 
 // Game state
 let gameRunning = false;
@@ -23,6 +47,8 @@ let isResetting = false;
 let resetTimeout = null;
 let scorePopups = []; // 存储得分动画
 let platformCount = 0; // 用于跟踪平台数量
+let visitedPlatforms = new Set();
+let showingSavePrompt = false;
 
 // Game elements
 let canvas;
@@ -104,7 +130,8 @@ function resizeCanvas() {
 // Create platforms
 function createPlatforms() {
     platforms = [];
-    platformCount = 0; // 重置平台计数
+    platformCount = 0;
+    visitedPlatforms.clear();
     
     // 创建地板
     platforms.push({
@@ -112,58 +139,155 @@ function createPlatforms() {
         y: canvas.height - FLOOR_HEIGHT,
         width: canvas.width,
         height: FLOOR_HEIGHT,
-        color: '#8B4513', // 深棕色
-        isFloor: true // 标记这是地板
+        color: '#8B4513',
+        isFloor: true,
+        id: 'floor',
+        type: 'floor'
     });
     
     // 创建初始平台
-    let platformY = canvas.height - FLOOR_HEIGHT - PLATFORM_GAP;
+    let platformY = canvas.height - FLOOR_HEIGHT - MIN_PLATFORM_GAP_Y;
+    let lastPlatformX = canvas.width / 2; // 记录上一个平台的X位置
     lastPlatformY = platformY;
     
     while (platformY > -VIEWPORT_PADDING) {
-        const platformWidth = canvas.width * (0.2 + Math.random() * 0.3);
-        const platformX = Math.random() * (canvas.width - platformWidth);
+        platformCount++;
         
-        platformCount++; // 增加平台计数
-        const isBed = platformCount % PLATFORMS_PER_BED === 0; // 每隔20个平台生成一张床
+        // 决定平台类型
+        let platformType;
+        let platformColor;
+        
+        if (platformCount % PLATFORMS_PER_BED === 0) {
+            platformType = PLATFORM_TYPES.BED;
+            platformColor = '#FF69B4';
+        } else if (platformCount % 10 === 0) {
+            platformType = PLATFORM_TYPES.GOLDEN;
+            platformColor = '#FFD700';
+        } else if (Math.random() < 0.15) {
+            platformType = PLATFORM_TYPES.BONUS;
+            platformColor = '#87CEEB';
+        } else {
+            platformType = PLATFORM_TYPES.NORMAL;
+            platformColor = '#2ecc71';
+        }
+
+        // 计算平台宽度（特殊平台稍宽一些）
+        const isSpecialPlatform = platformType !== PLATFORM_TYPES.NORMAL;
+        const minWidth = isSpecialPlatform ? 100 : 80;
+        const maxWidth = isSpecialPlatform ? 150 : 120;
+        const platformWidth = minWidth + Math.random() * (maxWidth - minWidth);
+        
+        // 计算平台水平位置，确保可达性
+        let platformX;
+        const maxHorizontalDistance = Math.min(MAX_JUMP_DISTANCE, canvas.width - platformWidth);
+        const horizontalOffset = Math.random() * (maxHorizontalDistance - MIN_PLATFORM_GAP_X) + MIN_PLATFORM_GAP_X;
+        
+        // 根据上一个平台的位置，确定新平台的位置
+        if (Math.random() < 0.5) {
+            // 向右偏移
+            platformX = Math.min(lastPlatformX + horizontalOffset, canvas.width - platformWidth);
+        } else {
+            // 向左偏移
+            platformX = Math.max(lastPlatformX - horizontalOffset, 0);
+        }
+        
+        // 确保平台不会太靠近屏幕边缘
+        platformX = Math.max(MIN_PLATFORM_GAP_X, Math.min(platformX, canvas.width - platformWidth - MIN_PLATFORM_GAP_X));
+        
+        // 计算垂直间距，考虑水平距离对跳跃难度的影响
+        const horizontalDistance = Math.abs(platformX - lastPlatformX);
+        const maxVerticalGap = Math.max(
+            MIN_PLATFORM_GAP_Y,
+            MAX_PLATFORM_GAP_Y * (1 - horizontalDistance / MAX_JUMP_DISTANCE)
+        );
+        const verticalGap = MIN_PLATFORM_GAP_Y + Math.random() * (maxVerticalGap - MIN_PLATFORM_GAP_Y);
         
         platforms.push({
             x: platformX,
             y: platformY,
             width: platformWidth,
             height: PLATFORM_HEIGHT,
-            color: isBed ? '#FF69B4' : '#2ecc71', // 床使用粉色
-            isBed: isBed,
-            isFloor: false
+            color: platformColor,
+            type: platformType,
+            isBed: platformType === PLATFORM_TYPES.BED,
+            isFloor: false,
+            id: `platform_${platformCount}`
         });
         
-        platformY -= PLATFORM_GAP + Math.random() * 50;
+        // 更新位置记录
+        lastPlatformX = platformX;
+        platformY -= verticalGap;
+        lastPlatformY = platformY;
     }
 }
 
-// Generate new platforms as player moves up
+// Generate new platforms
 function generateNewPlatforms() {
     platforms = platforms.filter(platform => 
         platform.isFloor || platform.y < player.y + canvas.height + VIEWPORT_PADDING);
     
+    let lastPlatformX = platforms[platforms.length - 1].x;
+    
     while (lastPlatformY > player.y - VIEWPORT_PADDING) {
-        const platformWidth = canvas.width * (0.2 + Math.random() * 0.3);
-        const platformX = Math.random() * (canvas.width - platformWidth);
+        platformCount++;
         
-        platformCount++; // 增加平台计数
-        const isBed = platformCount % PLATFORMS_PER_BED === 0; // 每隔20个平台生成一张床
+        // 决定平台类型
+        let platformType;
+        let platformColor;
+        
+        if (platformCount % PLATFORMS_PER_BED === 0) {
+            platformType = PLATFORM_TYPES.BED;
+            platformColor = '#FF69B4';
+        } else if (platformCount % 10 === 0) {
+            platformType = PLATFORM_TYPES.GOLDEN;
+            platformColor = '#FFD700';
+        } else if (Math.random() < 0.15) {
+            platformType = PLATFORM_TYPES.BONUS;
+            platformColor = '#87CEEB';
+        } else {
+            platformType = PLATFORM_TYPES.NORMAL;
+            platformColor = '#2ecc71';
+        }
+
+        // 使用与createPlatforms相同的平台生成逻辑
+        const isSpecialPlatform = platformType !== PLATFORM_TYPES.NORMAL;
+        const minWidth = isSpecialPlatform ? 100 : 80;
+        const maxWidth = isSpecialPlatform ? 150 : 120;
+        const platformWidth = minWidth + Math.random() * (maxWidth - minWidth);
+        
+        let platformX;
+        const maxHorizontalDistance = Math.min(MAX_JUMP_DISTANCE, canvas.width - platformWidth);
+        const horizontalOffset = Math.random() * (maxHorizontalDistance - MIN_PLATFORM_GAP_X) + MIN_PLATFORM_GAP_X;
+        
+        if (Math.random() < 0.5) {
+            platformX = Math.min(lastPlatformX + horizontalOffset, canvas.width - platformWidth);
+        } else {
+            platformX = Math.max(lastPlatformX - horizontalOffset, 0);
+        }
+        
+        platformX = Math.max(MIN_PLATFORM_GAP_X, Math.min(platformX, canvas.width - platformWidth - MIN_PLATFORM_GAP_X));
+        
+        const horizontalDistance = Math.abs(platformX - lastPlatformX);
+        const maxVerticalGap = Math.max(
+            MIN_PLATFORM_GAP_Y,
+            MAX_PLATFORM_GAP_Y * (1 - horizontalDistance / MAX_JUMP_DISTANCE)
+        );
+        const verticalGap = MIN_PLATFORM_GAP_Y + Math.random() * (maxVerticalGap - MIN_PLATFORM_GAP_Y);
         
         platforms.push({
             x: platformX,
             y: lastPlatformY,
             width: platformWidth,
             height: PLATFORM_HEIGHT,
-            color: isBed ? '#FF69B4' : '#2ecc71', // 床使用粉色
-            isBed: isBed,
-            isFloor: false
+            color: platformColor,
+            type: platformType,
+            isBed: platformType === PLATFORM_TYPES.BED,
+            isFloor: false,
+            id: `platform_${platformCount}`
         });
         
-        lastPlatformY -= PLATFORM_GAP + Math.random() * 50;
+        lastPlatformX = platformX;
+        lastPlatformY -= verticalGap;
     }
 }
 
@@ -330,14 +454,32 @@ function update() {
             player.y + player.height <= platform.y + player.velocityY + 5) {
             
             if (platform.isFloor) {
-                // 如果碰到地板，立即重新开始游戏
                 startResetProcess();
                 return;
             } else {
-                // 正常平台碰撞处理
                 player.isJumping = false;
                 player.velocityY = 0;
                 player.y = platform.y - player.height;
+
+                // 检查是否是新跳板，如果是则根据类型加分
+                if (!visitedPlatforms.has(platform.id)) {
+                    visitedPlatforms.add(platform.id);
+                    const scoreToAdd = PLATFORM_SCORES[platform.type];
+                    score += scoreToAdd;
+                    updateScore();
+                    
+                    // 添加得分动画
+                    scorePopups.push({
+                        x: player.x + player.width / 2,
+                        y: player.y,
+                        age: 0,
+                        score: scoreToAdd
+                    });
+                }
+
+                if (platform.isBed && !showingSavePrompt) {
+                    showSavePrompt(platform);
+                }
             }
         }
     }
@@ -390,40 +532,64 @@ function draw() {
                 ctx.lineTo(x + 20, platform.y);
                 ctx.stroke();
             }
-        } else if (platform.isBed) {
-            // 绘制床
-            // 床垫
-            ctx.fillStyle = '#FF69B4';
-            ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
-            
-            // 床单纹理
-            ctx.strokeStyle = '#FFB6C1';
-            ctx.lineWidth = 2;
-            for (let x = platform.x; x < platform.x + platform.width; x += 20) {
-                ctx.beginPath();
-                ctx.moveTo(x, platform.y);
-                ctx.lineTo(x + 10, platform.y + platform.height);
-                ctx.stroke();
-            }
-            
-            // 枕头
-            ctx.fillStyle = '#FFF';
-            const pillowWidth = platform.width * 0.2;
-            ctx.fillRect(platform.x + 5, platform.y - 5, pillowWidth, 10);
-
-            // 添加"休息点"文字
-            ctx.font = 'bold 16px Arial';
-            ctx.fillStyle = '#FFF'; // 白色文字
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.strokeStyle = '#FF1493'; // 深粉色描边
-            ctx.lineWidth = 3;
-            const textX = platform.x + platform.width / 2;
-            const textY = platform.y + platform.height / 2;
-            ctx.strokeText('休息点', textX, textY);
-            ctx.fillText('休息点', textX, textY);
         } else {
+            // 绘制平台
             ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+            
+            // 为不同类型的平台添加特效
+            switch (platform.type) {
+                case PLATFORM_TYPES.GOLDEN:
+                    // 金色跳板添加闪光效果
+                    const shimmerAlpha = (Math.sin(Date.now() / 200) + 1) / 2;
+                    ctx.fillStyle = `rgba(255, 255, 0, ${shimmerAlpha * 0.3})`;
+                    ctx.fillRect(platform.x, platform.y - 2, platform.width, platform.height + 4);
+                    break;
+                    
+                case PLATFORM_TYPES.BONUS:
+                    // 奖励跳板添加波纹效果
+                    ctx.strokeStyle = 'rgba(135, 206, 235, 0.5)';
+                    ctx.lineWidth = 2;
+                    const waveOffset = Math.sin(Date.now() / 300) * 5;
+                    ctx.beginPath();
+                    ctx.moveTo(platform.x, platform.y + platform.height/2);
+                    ctx.quadraticCurveTo(
+                        platform.x + platform.width/2, 
+                        platform.y + platform.height/2 + waveOffset,
+                        platform.x + platform.width,
+                        platform.y + platform.height/2
+                    );
+                    ctx.stroke();
+                    break;
+                    
+                case PLATFORM_TYPES.BED:
+                    // 休息点的绘制逻辑
+                    ctx.strokeStyle = '#FFB6C1';
+                    ctx.lineWidth = 2;
+                    for (let x = platform.x; x < platform.x + platform.width; x += 20) {
+                        ctx.beginPath();
+                        ctx.moveTo(x, platform.y);
+                        ctx.lineTo(x + 10, platform.y + platform.height);
+                        ctx.stroke();
+                    }
+                    
+                    // 枕头
+                    ctx.fillStyle = '#FFF';
+                    const pillowWidth = platform.width * 0.2;
+                    ctx.fillRect(platform.x + 5, platform.y - 5, pillowWidth, 10);
+                    
+                    // 休息点文字
+                    ctx.font = 'bold 16px Arial';
+                    ctx.fillStyle = '#FFF';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.strokeStyle = '#FF1493';
+                    ctx.lineWidth = 3;
+                    const textX = platform.x + platform.width / 2;
+                    const textY = platform.y + platform.height / 2;
+                    ctx.strokeText('休息点', textX, textY);
+                    ctx.fillText('休息点', textX, textY);
+                    break;
+            }
         }
     }
     
@@ -571,4 +737,11 @@ function gameLoop() {
 
 // Initialize the game when the page loads
 window.addEventListener('load', init); 
-window.addEventListener('load', init); 
+
+function showSavePrompt(platform) {
+    // 实现显示保存提示的逻辑
+    console.log("Saving prompt for platform:", platform);
+}
+
+// Add any other necessary functions here
+// ... 
