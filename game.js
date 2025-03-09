@@ -12,6 +12,7 @@ const FLOOR_HEIGHT = 40; // 地板高度
 const SCORE_POPUP_DURATION = 1000; // 得分提示显示时间（毫秒）
 const SCORE_HEIGHT = 50; // 每上升这么多像素得1分
 const PLATFORMS_PER_BED = 20; // 每隔多少个平台生成一张床
+const SUPER_JUMP_COST = 50;  // 大跳消耗的金币数
 
 // 宝物相关常量
 const TREASURE_TYPES = {
@@ -492,11 +493,24 @@ function update() {
     
     // Handle jumping with super jump
     if (keys.up && !player.isJumping) {
-        // 如果同时按下shift，触发大跳
+        // 如果同时按下shift，尝试触发大跳
         if (keys.shift) {
-            player.velocityY = JUMP_FORCE * SUPER_JUMP_MULTIPLIER;
-            // 添加大跳特效
-            addSuperJumpEffect();
+            if (coins >= SUPER_JUMP_COST) {
+                player.velocityY = JUMP_FORCE * SUPER_JUMP_MULTIPLIER;
+                // 扣除金币
+                coins -= SUPER_JUMP_COST;
+                // 添加大跳特效
+                addSuperJumpEffect();
+                // 显示消耗提示
+                showCostEffect();
+                // 更新金币显示
+                updateCoins();
+            } else {
+                // 金币不足时显示提示
+                showInsufficientCoinsEffect();
+                // 执行普通跳跃
+                player.velocityY = JUMP_FORCE;
+            }
         } else {
             player.velocityY = JUMP_FORCE;
         }
@@ -834,30 +848,48 @@ function draw() {
     coinPopups.forEach(popup => {
         const alpha = 1 - (popup.age / SCORE_POPUP_DURATION);
         ctx.font = 'bold 20px Arial';
-        
-        // 绘制数值
-        ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
-        ctx.strokeStyle = `rgba(0, 0, 0, ${alpha})`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.lineWidth = 3;
         
-        // 如果有连击加成，显示额外信息
-        if (popup.combo > 1) {
-            const comboText = `${popup.combo}连击!`;
-            const multiplierText = `x${popup.multiplier}`;
-            
-            ctx.strokeText(comboText, popup.x, popup.y - 20);
-            ctx.fillText(comboText, popup.x, popup.y - 20);
-            
-            ctx.strokeText(`${popup.symbol} +${popup.value}`, popup.x, popup.y);
-            ctx.fillText(`${popup.symbol} +${popup.value}`, popup.x, popup.y);
-            
-            ctx.strokeText(multiplierText, popup.x, popup.y + 20);
-            ctx.fillText(multiplierText, popup.x, popup.y + 20);
+        if (popup.type === 'warning') {
+            // 绘制警告提示
+            ctx.fillStyle = `rgba(255, 68, 68, ${alpha})`;
+            ctx.strokeStyle = `rgba(0, 0, 0, ${alpha})`;
+            ctx.strokeText(popup.value, popup.x, popup.y);
+            ctx.fillText(popup.value, popup.x, popup.y);
+        } else if (popup.type === 'cost') {
+            // 绘制消耗提示
+            ctx.fillStyle = `rgba(255, 68, 68, ${alpha})`;
+            ctx.strokeStyle = `rgba(0, 0, 0, ${alpha})`;
+            ctx.strokeText(`${popup.symbol} ${popup.value}`, popup.x, popup.y);
+            ctx.fillText(`${popup.symbol} ${popup.value}`, popup.x, popup.y);
+        } else if (popup.type === 'particle') {
+            // 绘制粒子效果
+            ctx.beginPath();
+            ctx.arc(popup.x + popup.velocityX * popup.age/50, 
+                   popup.y + popup.velocityY * popup.age/50, 
+                   popup.radius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(${hexToRgb(popup.color)}, ${alpha})`;
+            ctx.fill();
         } else {
-            ctx.strokeText(`${popup.symbol} +${popup.value}`, popup.x, popup.y);
-            ctx.fillText(`${popup.symbol} +${popup.value}`, popup.x, popup.y);
+            // 原有的收集提示
+            if (popup.combo > 1) {
+                const comboText = `${popup.combo}连击!`;
+                const multiplierText = `x${popup.multiplier}`;
+                
+                ctx.strokeText(comboText, popup.x, popup.y - 20);
+                ctx.fillText(comboText, popup.x, popup.y - 20);
+                
+                ctx.strokeText(`${popup.symbol} +${popup.value}`, popup.x, popup.y);
+                ctx.fillText(`${popup.symbol} +${popup.value}`, popup.x, popup.y);
+                
+                ctx.strokeText(multiplierText, popup.x, popup.y + 20);
+                ctx.fillText(multiplierText, popup.x, popup.y + 20);
+            } else {
+                ctx.strokeText(`${popup.symbol} +${popup.value}`, popup.x, popup.y);
+                ctx.fillText(`${popup.symbol} +${popup.value}`, popup.x, popup.y);
+            }
         }
     });
     
@@ -1197,6 +1229,31 @@ function hexToRgb(hex) {
     return result ? 
         `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` 
         : '255, 255, 255';
+}
+
+// 添加金币不足提示效果
+function showInsufficientCoinsEffect() {
+    coinPopups.push({
+        x: canvas.width - 150,
+        y: 60,
+        value: `金币不足！需要${SUPER_JUMP_COST}金币`,
+        age: 0,
+        color: '#FF4444',
+        type: 'warning'
+    });
+}
+
+// 添加消耗提示效果
+function showCostEffect() {
+    coinPopups.push({
+        x: player.x + player.width / 2,
+        y: player.y - 20,
+        value: -SUPER_JUMP_COST,
+        age: 0,
+        color: '#FF4444',
+        symbol: '💰',
+        type: 'cost'
+    });
 }
 
 // ... 
