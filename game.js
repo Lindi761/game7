@@ -101,6 +101,7 @@ let platformCount = 0; // 用于跟踪平台数量
 let visitedPlatforms = new Set();
 let showingSavePrompt = false;
 let treasures = [];  // 存储所有宝物
+let monsters = [];  // 重置怪兽数组
 
 // Game elements
 let canvas;
@@ -118,6 +119,24 @@ let keys = {
 
 let lastTreasureSpawnCount = 0;  // 上次生成宝物时的平台计数
 let lastTreasureType = null;     // 上次生成的宝物类型
+
+// 怪兽相关常量
+const MONSTER_LAYER_INTERVAL = 20;  // 每20层出现一次怪兽（原为15层）
+const MONSTER_SIZE = 40;            // 怪兽大小
+const MONSTER_COLORS = ['#FF4D4D', '#FF1A1A', '#CC0000'];  // 怪兽的颜色渐变
+const MONSTER_MOVE_SPEED = 0.6;     // 怪兽移动速度（原为1.0）
+const MONSTER_MOVE_RANGE = 60;      // 怪兽移动范围（原为80）
+const MONSTER_BLINK_INTERVAL = 3000; // 眨眼间隔（毫秒）
+const MONSTER_BLINK_DURATION = 200;  // 眨眼持续时间（毫秒）
+const MONSTER_ATTACK_RANGE = 100;    // 怪兽感知玩家的范围（原为120）
+const MONSTER_ANGRY_DURATION = 3000; // 怪兽愤怒状态持续时间（原为2000）
+const MONSTER_WARNING_RANGE = 200;   // 怪兽警告范围（原为180）
+const MONSTER_ANGRY_SPEED_MULTIPLIER = 1.1; // 愤怒状态速度倍率（原为1.2）
+const MONSTER_INVINCIBLE_TIME = 1000; // 玩家无敌时间（新增）
+
+// 添加玩家状态
+let playerInvincible = false;  // 玩家是否处于无敌状态
+let invincibleTimer = 0;      // 无敌时间计时器
 
 // Initialize the game
 function init() {
@@ -190,6 +209,7 @@ function createPlatforms() {
     visitedPlatforms.clear();
     lastTreasureSpawnCount = 0;
     lastTreasureType = null;
+    monsters = [];  // 重置怪兽数组
     
     // 创建地板
     platforms.push({
@@ -205,11 +225,70 @@ function createPlatforms() {
     
     // 创建初始平台
     let platformY = canvas.height - FLOOR_HEIGHT - MIN_PLATFORM_GAP_Y;
-    let lastPlatformX = canvas.width / 2; // 记录上一个平台的X位置
+    let lastPlatformX = canvas.width / 2;
     lastPlatformY = platformY;
+    
+    let currentLayer = 0;  // 当前层数
+    let lastLayerY = canvas.height - FLOOR_HEIGHT;  // 上一层的Y坐标
+    let currentLayerGroup = 0;  // 当前十层组
+    let monsterLayerInGroup = -1;  // 本组中怪兽将出现的层数
     
     while (platformY > -VIEWPORT_PADDING) {
         platformCount++;
+        
+        // 检查是否进入新的一层
+        if (Math.abs(platformY - lastLayerY) >= MIN_PLATFORM_GAP_Y) {
+            currentLayer++;
+            lastLayerY = platformY;
+            
+            // 检查是否进入新的十层组
+            if (Math.floor(currentLayer / MONSTER_LAYER_INTERVAL) > currentLayerGroup) {
+                currentLayerGroup = Math.floor(currentLayer / MONSTER_LAYER_INTERVAL);
+                // 在新的十层组中随机选择一层生成怪兽
+                monsterLayerInGroup = (currentLayerGroup * MONSTER_LAYER_INTERVAL) + 
+                    Math.floor(Math.random() * MONSTER_LAYER_INTERVAL);
+            }
+            
+            // 检查当前层是否是选中的怪兽层
+            if (currentLayer === monsterLayerInGroup) {
+                const platformWidth = 160;  // 增加平台宽度（原为120）
+                const platformX = Math.min(Math.max(canvas.width/4, 
+                    Math.random() * (canvas.width - platformWidth - MONSTER_MOVE_RANGE)), 
+                    canvas.width * 3/4);
+                
+                // 创建更宽的平台，方便玩家躲避
+                platforms.push({
+                    x: platformX,
+                    y: platformY,
+                    width: platformWidth,
+                    height: PLATFORM_HEIGHT,
+                    color: '#FF6B6B',  // 红色警示
+                    type: PLATFORM_TYPES.NORMAL,
+                    isFloor: false,
+                    id: `platform_${platformCount}`,
+                    hasMonster: true
+                });
+                
+                // 在平台上生成怪兽
+                monsters.push({
+                    x: platformX + platformWidth / 2 - MONSTER_SIZE / 2,
+                    y: platformY - MONSTER_SIZE,
+                    width: MONSTER_SIZE,
+                    height: MONSTER_SIZE,
+                    platformId: `platform_${platformCount}`,
+                    animationOffset: Math.random() * Math.PI * 2,
+                    eyeBlinkTimer: 0,
+                    initialX: platformX + platformWidth / 2 - MONSTER_SIZE / 2,
+                    moveDirection: 1,
+                    moveOffset: 0,
+                    platformWidth: platformWidth
+                });
+                
+                platformY -= MIN_PLATFORM_GAP_Y + Math.random() * (MAX_PLATFORM_GAP_Y - MIN_PLATFORM_GAP_Y);
+                lastPlatformY = platformY;
+                continue;
+            }
+        }
         
         // 决定平台类型
         let platformType;
@@ -301,10 +380,62 @@ function generateNewPlatforms() {
     
     let lastPlatformX = platforms[platforms.length - 1].x;
     
+    let currentLayer = Math.floor((canvas.height - lastPlatformY) / MIN_PLATFORM_GAP_Y);
+    let currentLayerGroup = Math.floor(currentLayer / MONSTER_LAYER_INTERVAL);
+    let monsterLayerInGroup = (currentLayerGroup * MONSTER_LAYER_INTERVAL) + 
+        Math.floor(Math.random() * MONSTER_LAYER_INTERVAL);
+    
     while (lastPlatformY > player.y - VIEWPORT_PADDING) {
         platformCount++;
+        currentLayer++;
         
-        // 决定平台类型
+        // 检查是否是怪兽层
+        if (currentLayer === monsterLayerInGroup) {
+            const platformWidth = 120;
+            const platformX = Math.min(Math.max(canvas.width/4, 
+                Math.random() * (canvas.width - platformWidth - MONSTER_MOVE_RANGE)), 
+                canvas.width * 3/4);
+            
+            // 创建平台
+            platforms.push({
+                x: platformX,
+                y: lastPlatformY,
+                width: platformWidth,
+                height: PLATFORM_HEIGHT,
+                color: '#FF6B6B',
+                type: PLATFORM_TYPES.NORMAL,
+                isFloor: false,
+                id: `platform_${platformCount}`,
+                hasMonster: true
+            });
+            
+            // 生成怪兽
+            monsters.push({
+                x: platformX + platformWidth / 2 - MONSTER_SIZE / 2,
+                y: lastPlatformY - MONSTER_SIZE,
+                width: MONSTER_SIZE,
+                height: MONSTER_SIZE,
+                platformId: `platform_${platformCount}`,
+                animationOffset: Math.random() * Math.PI * 2,
+                eyeBlinkTimer: 0,
+                initialX: platformX + platformWidth / 2 - MONSTER_SIZE / 2,
+                moveDirection: 1,
+                moveOffset: 0,
+                platformWidth: platformWidth
+            });
+            
+            // 检查是否需要进入新的十层组
+            if (Math.floor((currentLayer + 1) / MONSTER_LAYER_INTERVAL) > currentLayerGroup) {
+                currentLayerGroup = Math.floor((currentLayer + 1) / MONSTER_LAYER_INTERVAL);
+                monsterLayerInGroup = (currentLayerGroup * MONSTER_LAYER_INTERVAL) + 
+                    Math.floor(Math.random() * MONSTER_LAYER_INTERVAL);
+            }
+            
+            lastPlatformY -= MIN_PLATFORM_GAP_Y + Math.random() * (MAX_PLATFORM_GAP_Y - MIN_PLATFORM_GAP_Y);
+            continue;
+        }
+        
+        // 正常平台生成逻辑
         let platformType;
         let platformColor;
         
@@ -683,6 +814,84 @@ function update() {
         popup.y -= 2;
         return popup.age < SCORE_POPUP_DURATION;
     });
+
+    // 更新怪兽状态和动画
+    monsters.forEach(monster => {
+        // 更新眨眼计时器
+        monster.eyeBlinkTimer += 16;
+        if (monster.eyeBlinkTimer >= MONSTER_BLINK_INTERVAL) {
+            monster.isBlinking = true;
+            if (monster.eyeBlinkTimer >= MONSTER_BLINK_INTERVAL + MONSTER_BLINK_DURATION) {
+                monster.eyeBlinkTimer = 0;
+                monster.isBlinking = false;
+            }
+        }
+        
+        // 检测玩家是否在感知范围内
+        const dx = player.x + player.width/2 - (monster.x + MONSTER_SIZE/2);
+        const dy = player.y + player.height/2 - (monster.y + MONSTER_SIZE/2);
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // 更新警告状态
+        monster.isWarning = distance < MONSTER_WARNING_RANGE;
+        
+        if (distance < MONSTER_ATTACK_RANGE) {
+            // 玩家进入感知范围，怪兽进入愤怒状态
+            monster.isAngry = true;
+            monster.angryTimer = MONSTER_ANGRY_DURATION;
+            
+            // 根据玩家位置调整移动方向
+            monster.moveDirection = dx > 0 ? 1 : -1;
+            
+            // 增加移动速度（降低速度倍率）
+            monster.moveOffset += MONSTER_MOVE_SPEED * MONSTER_ANGRY_SPEED_MULTIPLIER * monster.moveDirection;
+        } else {
+            // 正常巡逻
+            if (monster.angryTimer > 0) {
+                monster.angryTimer -= 16;
+                if (monster.angryTimer <= 0) {
+                    monster.isAngry = false;
+                }
+            }
+            monster.moveOffset += MONSTER_MOVE_SPEED * monster.moveDirection;
+        }
+        
+        // 限制移动范围
+        if (Math.abs(monster.moveOffset) > MONSTER_MOVE_RANGE) {
+            monster.moveDirection *= -1;
+            monster.moveOffset = monster.moveDirection * MONSTER_MOVE_RANGE;
+        }
+        
+        // 更新怪兽位置
+        monster.x = monster.initialX + monster.moveOffset;
+        
+        // 检测与玩家的碰撞
+        if (!playerInvincible && checkCollision(player, {
+            x: monster.x,
+            y: monster.y,
+            width: MONSTER_SIZE,
+            height: MONSTER_SIZE
+        })) {
+            // 如果玩家正在上升，给予一次逃脱机会
+            if (player.velocityY < 0) {
+                playerInvincible = true;
+                invincibleTimer = MONSTER_INVINCIBLE_TIME;
+                // 给予向上的额外推力
+                player.velocityY = JUMP_FORCE * 1.2;
+            } else {
+                startResetProcess();
+                return;
+            }
+        }
+    });
+
+    // 更新无敌状态
+    if (playerInvincible) {
+        invincibleTimer -= 16;
+        if (invincibleTimer <= 0) {
+            playerInvincible = false;
+        }
+    }
 }
 
 // Draw game elements
@@ -786,6 +995,24 @@ function draw() {
     
     // Draw player
     ctx.fillStyle = player.color;
+    if (playerInvincible) {
+        // 无敌状态闪烁效果
+        const alpha = 0.3 + Math.sin(Date.now() / 100) * 0.7;
+        ctx.fillStyle = `rgba(52, 152, 219, ${alpha})`;
+        
+        // 添加无敌状态光环
+        ctx.beginPath();
+        ctx.arc(
+            player.x + player.width/2,
+            player.y + player.height/2,
+            player.width * 0.8,
+            0,
+            Math.PI * 2
+        );
+        ctx.strokeStyle = `rgba(255, 215, 0, ${0.5 + Math.sin(Date.now() / 200) * 0.5})`;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+    }
     ctx.fillRect(player.x, player.y, player.width, player.height);
     
     // 绘制得分动画
@@ -905,6 +1132,139 @@ function draw() {
         ctx.strokeText(`${combo}连击!`, canvas.width - 20, 20);
         ctx.fillText(`${combo}连击!`, canvas.width - 20, 20);
     }
+    
+    // 绘制怪兽
+    monsters.forEach(monster => {
+        ctx.save();
+        
+        // 添加警告效果
+        if (monster.isWarning && !monster.isAngry) {
+            // 绘制警告圈
+            ctx.beginPath();
+            ctx.arc(
+                monster.x + MONSTER_SIZE/2,
+                monster.y + MONSTER_SIZE/2,
+                MONSTER_SIZE * 0.8,
+                0,
+                Math.PI * 2
+            );
+            ctx.strokeStyle = `rgba(255, 255, 0, ${0.3 + Math.sin(Date.now() / 200) * 0.2})`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        
+        // 如果处于愤怒状态，添加发光效果
+        if (monster.isAngry) {
+            ctx.shadowColor = '#FF0000';
+            ctx.shadowBlur = 20;
+            
+            // 添加愤怒状态倒计时指示器
+            const angerProgress = monster.angryTimer / MONSTER_ANGRY_DURATION;
+            const indicatorWidth = MONSTER_SIZE * 1.2;
+            const indicatorHeight = 4;
+            const indicatorY = monster.y - 10;
+            
+            // 绘制背景条
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(
+                monster.x + MONSTER_SIZE/2 - indicatorWidth/2,
+                indicatorY,
+                indicatorWidth,
+                indicatorHeight
+            );
+            
+            // 绘制进度条
+            ctx.fillStyle = '#FF0000';
+            ctx.fillRect(
+                monster.x + MONSTER_SIZE/2 - indicatorWidth/2,
+                indicatorY,
+                indicatorWidth * angerProgress,
+                indicatorHeight
+            );
+        }
+        
+        // 绘制怪兽身体
+        const gradient = ctx.createLinearGradient(
+            monster.x, monster.y,
+            monster.x, monster.y + MONSTER_SIZE
+        );
+        MONSTER_COLORS.forEach((color, index) => {
+            gradient.addColorStop(index / (MONSTER_COLORS.length - 1), color);
+        });
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(monster.x, monster.y, MONSTER_SIZE, MONSTER_SIZE);
+        
+        // 绘制眼睛
+        const eyeSize = MONSTER_SIZE * 0.2;
+        const eyeY = monster.y + MONSTER_SIZE * 0.3;
+        const leftEyeX = monster.x + MONSTER_SIZE * 0.25;
+        const rightEyeX = monster.x + MONSTER_SIZE * 0.75;
+        
+        // 眨眼效果
+        if (!monster.isBlinking) {
+            // 眼白
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.arc(leftEyeX, eyeY, eyeSize, 0, Math.PI * 2);
+            ctx.arc(rightEyeX, eyeY, eyeSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 眼球
+            const pupilOffset = monster.moveDirection * eyeSize * 0.2;
+            ctx.fillStyle = monster.isAngry ? '#FF0000' : '#000000';
+            ctx.beginPath();
+            ctx.arc(leftEyeX + pupilOffset, eyeY, eyeSize * 0.5, 0, Math.PI * 2);
+            ctx.arc(rightEyeX + pupilOffset, eyeY, eyeSize * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            // 闭眼状态
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(leftEyeX - eyeSize, eyeY);
+            ctx.lineTo(leftEyeX + eyeSize, eyeY);
+            ctx.moveTo(rightEyeX - eyeSize, eyeY);
+            ctx.lineTo(rightEyeX + eyeSize, eyeY);
+            ctx.stroke();
+        }
+        
+        // 绘制嘴巴
+        const mouthY = monster.y + MONSTER_SIZE * 0.7;
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (monster.isAngry) {
+            // 生气表情
+            ctx.moveTo(monster.x + MONSTER_SIZE * 0.3, mouthY);
+            ctx.lineTo(monster.x + MONSTER_SIZE * 0.7, mouthY);
+            ctx.moveTo(monster.x + MONSTER_SIZE * 0.3, mouthY - 5);
+            ctx.lineTo(monster.x + MONSTER_SIZE * 0.3, mouthY + 5);
+            ctx.moveTo(monster.x + MONSTER_SIZE * 0.7, mouthY - 5);
+            ctx.lineTo(monster.x + MONSTER_SIZE * 0.7, mouthY + 5);
+        } else {
+            // 普通表情
+            ctx.arc(
+                monster.x + MONSTER_SIZE * 0.5,
+                mouthY,
+                MONSTER_SIZE * 0.2,
+                0,
+                Math.PI,
+                false
+            );
+        }
+        ctx.stroke();
+        
+        // 如果怪兽处于愤怒状态，绘制感叹号
+        if (monster.isAngry) {
+            ctx.font = 'bold 20px Arial';
+            ctx.fillStyle = '#FF0000';
+            ctx.textAlign = 'center';
+            ctx.fillText('!', monster.x + MONSTER_SIZE * 0.5, monster.y - 10);
+        }
+        
+        ctx.restore();
+    });
     
     ctx.restore();
 
