@@ -78,8 +78,22 @@ const PLATFORM_SCORES = {
     [PLATFORM_TYPES.BONUS]: 2      // 奖励跳板2分
 };
 
-// 宝物生成相关常量
-const TREASURE_SPAWN_INTERVAL = 5;  // 每5个平台生成一个宝物
+// 添加难度相关常量
+const DIFFICULTY_LEVELS = {
+    EASY: 'easy',      // 低级：每层都有宝物
+    MEDIUM: 'medium',  // 中级：每3层一个宝物
+    HARD: 'hard'       // 高级：每5层一个宝物
+};
+
+// 修改宝物生成相关常量
+const TREASURE_SPAWN_INTERVALS = {
+    [DIFFICULTY_LEVELS.EASY]: 1,    // 每层都有宝物
+    [DIFFICULTY_LEVELS.MEDIUM]: 3,  // 每3层一个宝物
+    [DIFFICULTY_LEVELS.HARD]: 5     // 每5层一个宝物
+};
+
+// 添加当前难度状态
+let currentDifficulty = DIFFICULTY_LEVELS.MEDIUM; // 默认中等难度
 
 // Game state
 let gameRunning = false;
@@ -140,6 +154,92 @@ let invincibleTimer = 0;      // 无敌时间计时器
 
 // Initialize the game
 function init() {
+    // 创建难度选择界面
+    const difficultyMenu = document.createElement('div');
+    difficultyMenu.id = 'difficulty-menu';
+    difficultyMenu.innerHTML = `
+        <div class="difficulty-container">
+            <h2>选择难度</h2>
+            <div class="difficulty-buttons">
+                <button class="difficulty-btn" data-difficulty="easy">低级</button>
+                <button class="difficulty-btn" data-difficulty="medium">中级</button>
+                <button class="difficulty-btn" data-difficulty="hard">高级</button>
+            </div>
+        </div>
+    `;
+    
+    // 添加难度选择按钮的样式
+    const style = document.createElement('style');
+    style.textContent = `
+        #difficulty-menu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .difficulty-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+        }
+        .difficulty-container h2 {
+            color: white;
+            margin-bottom: 1.5rem;
+            font-size: 2rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        .difficulty-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+        .difficulty-btn {
+            padding: 1rem 2rem;
+            font-size: 1.2rem;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .difficulty-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.2);
+        }
+        .difficulty-btn:active {
+            transform: translateY(0);
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // 添加难度选择按钮的事件监听
+    const buttons = difficultyMenu.querySelectorAll('.difficulty-btn');
+    buttons.forEach(button => {
+        button.addEventListener('click', () => {
+            currentDifficulty = button.dataset.difficulty;
+            difficultyMenu.remove();
+            startGame();
+        });
+    });
+    
+    // 将难度选择界面添加到游戏区域
+    const gameArea = document.getElementById('game-area');
+    gameArea.appendChild(difficultyMenu);
+}
+
+// 添加开始游戏的函数
+function startGame() {
     // Create canvas
     canvas = document.createElement('canvas');
     ctx = canvas.getContext('2d');
@@ -162,7 +262,7 @@ function init() {
         velocityY: 0,
         isJumping: false,
         color: '#3498db',
-        highestY: 0 // 记录玩家达到的最高位置
+        highestY: 0
     };
     
     // Initialize trail
@@ -359,10 +459,8 @@ function createPlatforms() {
     
     platforms.forEach(platform => {
         if (!platform.isFloor) {
-            // 每5个平台随机选择一个生成宝物
-            if (platformCount % TREASURE_SPAWN_INTERVAL === 0) {
-                // 在这5个平台中随机选择一个位置生成宝物
-                const randomOffset = Math.floor(Math.random() * TREASURE_SPAWN_INTERVAL);
+            if (shouldSpawnTreasure(platformCount)) {
+                const randomOffset = Math.floor(Math.random() * TREASURE_SPAWN_INTERVALS[currentDifficulty]);
                 const targetPlatform = platforms[platforms.length - randomOffset - 1];
                 if (targetPlatform && !targetPlatform.isFloor) {
                     generateTreasure(targetPlatform);
@@ -493,10 +591,9 @@ function generateNewPlatforms() {
         lastPlatformX = platformX;
         lastPlatformY -= verticalGap;
         
-        // 每5个平台随机选择一个生成宝物
-        if (platformCount % TREASURE_SPAWN_INTERVAL === 0) {
-            // 在最近生成的5个平台中随机选择一个位置生成宝物
-            const recentPlatforms = platforms.slice(-TREASURE_SPAWN_INTERVAL);
+        // 每2个平台随机选择一个生成宝物
+        if (shouldSpawnTreasure(platformCount)) {
+            const recentPlatforms = platforms.slice(-TREASURE_SPAWN_INTERVALS[currentDifficulty]);
             const randomPlatform = recentPlatforms[Math.floor(Math.random() * recentPlatforms.length)];
             if (randomPlatform && !randomPlatform.isFloor) {
                 generateTreasure(randomPlatform);
@@ -1614,6 +1711,11 @@ function showCostEffect() {
         symbol: '💰',
         type: 'cost'
     });
+}
+
+// 修改宝物生成逻辑
+function shouldSpawnTreasure(platformCount) {
+    return platformCount % TREASURE_SPAWN_INTERVALS[currentDifficulty] === 0;
 }
 
 // ... 
