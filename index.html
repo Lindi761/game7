@@ -11,6 +11,7 @@
         <div class="score-container">
             <div id="score">分数: 0</div>
             <div id="high-score">最高分: 0</div>
+            <button id="buy-coins-btn" class="buy-btn">购买金币</button>
         </div>
         <div id="game-area">
             <!-- Game canvas will be inserted here by JavaScript -->
@@ -24,6 +25,16 @@
                 <button id="up-btn" class="control-btn">↑</button>
                 <button id="down-btn" class="control-btn">↓</button>
             </div>
+        </div>
+    </div>
+    <!-- 付款码弹窗 -->
+    <div id="payment-modal" class="modal">
+        <div class="modal-content">
+            <h2>购买金币</h2>
+            <p>1元 = 1000金币</p>
+            <img src="收款码.jpg" alt="付款码" class="payment-qr">
+            <button id="payment-success-btn" class="success-btn">付款成功</button>
+            <button id="close-modal-btn" class="close-btn">关闭</button>
         </div>
     </div>
     <script src="game.js"></script>

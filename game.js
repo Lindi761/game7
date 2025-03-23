@@ -236,6 +236,47 @@ function init() {
     // 将难度选择界面添加到游戏区域
     const gameArea = document.getElementById('game-area');
     gameArea.appendChild(difficultyMenu);
+
+    // 添加购买按钮事件监听
+    const buyCoinsBtn = document.getElementById('buy-coins-btn');
+    const paymentModal = document.getElementById('payment-modal');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+    const paymentSuccessBtn = document.getElementById('payment-success-btn');
+
+    buyCoinsBtn.addEventListener('click', () => {
+        paymentModal.style.display = 'flex';
+    });
+
+    closeModalBtn.addEventListener('click', () => {
+        paymentModal.style.display = 'none';
+    });
+
+    paymentSuccessBtn.addEventListener('click', () => {
+        // 增加1000金币
+        coins += 1000;
+        updateCoins();
+        
+        // 显示购买成功动画
+        coinPopups.push({
+            x: canvas.width - 150,
+            y: 60,
+            value: '+1000',
+            age: 0,
+            color: '#FFD700',
+            symbol: '💰',
+            type: 'success'
+        });
+
+        // 关闭弹窗
+        paymentModal.style.display = 'none';
+    });
+
+    // 点击弹窗外部关闭
+    paymentModal.addEventListener('click', (e) => {
+        if (e.target === paymentModal) {
+            paymentModal.style.display = 'none';
+        }
+    });
 }
 
 // 添加开始游戏的函数
