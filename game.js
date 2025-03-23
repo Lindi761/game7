@@ -241,18 +241,11 @@ function init() {
     const buyCoinsBtn = document.getElementById('buy-coins-btn');
     const paymentModal = document.getElementById('payment-modal');
     const closeModalBtn = document.getElementById('close-modal-btn');
-    const paymentSuccessBtn = document.getElementById('payment-success-btn');
 
-    buyCoinsBtn.addEventListener('click', () => {
-        paymentModal.style.display = 'flex';
-    });
-
-    closeModalBtn.addEventListener('click', () => {
-        paymentModal.style.display = 'none';
-    });
-
-    paymentSuccessBtn.addEventListener('click', () => {
-        // 增加1000金币
+    // 检查URL中是否有支付成功的参数
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('payment') === 'success') {
+        // 支付成功
         coins += 1000;
         updateCoins();
         
@@ -267,7 +260,18 @@ function init() {
             type: 'success'
         });
 
-        // 关闭弹窗
+        // 自动关闭支付弹窗
+        paymentModal.style.display = 'none';
+
+        // 清除URL参数
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    buyCoinsBtn.addEventListener('click', () => {
+        paymentModal.style.display = 'flex';
+    });
+
+    closeModalBtn.addEventListener('click', () => {
         paymentModal.style.display = 'none';
     });
 

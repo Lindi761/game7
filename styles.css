@@ -243,4 +243,34 @@ canvas {
         height: 80px;
         font-size: 30px;
     }
+}
+
+.payment-link {
+    display: block;
+    margin: 20px 0;
+    text-decoration: none;
+}
+
+.stripe-btn {
+    background: linear-gradient(45deg, #635BFF, #FF5B5B);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 25px;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 200px;
+}
+
+.stripe-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 8px rgba(0, 0, 0, 0.2);
+}
+
+.stripe-btn:active {
+    transform: translateY(0);
 } 

@@ -32,8 +32,9 @@
         <div class="modal-content">
             <h2>购买金币</h2>
             <p>1元 = 1000金币</p>
-            <img src="收款码.jpg" alt="付款码" class="payment-qr">
-            <button id="payment-success-btn" class="success-btn">付款成功</button>
+            <a href="https://buy.stripe.com/test_aEU5m66YeaTDgNi4gh?success_url=${window.location.origin}%3Fpayment%3Dsuccess%26session_id%3D{CHECKOUT_SESSION_ID}&cancel_url=${window.location.origin}" target="_blank" class="payment-link">
+                <button class="stripe-btn">点击支付</button>
+            </a>
             <button id="close-modal-btn" class="close-btn">关闭</button>
         </div>
     </div>
