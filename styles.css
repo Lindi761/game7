@@ -77,24 +77,31 @@ canvas {
 }
 
 .controls-container {
-    height: 120px;
+    position: fixed;
+    bottom: 20px;
+    left: 0;
+    right: 0;
     display: flex;
     justify-content: space-between;
-    padding: 10px;
-    background-color: #ddd;
+    padding: 0 20px;
 }
 
-.direction-controls, .action-controls {
+.left-controls {
     display: flex;
+    align-items: center;
+}
+
+.right-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     gap: 10px;
 }
 
-.direction-controls {
-    align-items: center;
-}
-
-.action-controls {
-    align-items: center;
+.middle-row {
+    display: flex;
+    gap: 60px;
+    margin: 10px 0;
 }
 
 .control-btn {
@@ -102,20 +109,29 @@ canvas {
     height: 60px;
     border-radius: 50%;
     border: none;
-    background-color: #ff5252;
+    background: rgba(255, 255, 255, 0.2);
     color: white;
     font-size: 24px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
     cursor: pointer;
-    user-select: none;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(5px);
+    transition: all 0.3s ease;
 }
 
 .control-btn:active {
     transform: scale(0.95);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.super-jump {
+    width: 80px;
+    height: 80px;
+    font-size: 20px;
+    background: rgba(255, 215, 0, 0.2);
+}
+
+.direction-btn {
+    background: rgba(255, 255, 255, 0.15);
+    border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
 .score-container {
@@ -199,19 +215,24 @@ canvas {
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
-.success-btn, .close-btn {
-    padding: 10px 20px;
-    margin: 5px;
+.success-btn {
+    background: linear-gradient(45deg, #2ecc71, #27ae60);
+    color: white;
     border: none;
-    border-radius: 20px;
+    padding: 10px 20px;
+    border-radius: 5px;
     cursor: pointer;
-    font-weight: bold;
+    margin: 10px;
+    font-size: 16px;
     transition: transform 0.2s;
 }
 
-.success-btn {
-    background: linear-gradient(45deg, #4CAF50, #45a049);
-    color: white;
+.success-btn:hover {
+    transform: scale(1.05);
+}
+
+.success-btn:active {
+    transform: scale(0.95);
 }
 
 .close-btn {

@@ -152,6 +152,8 @@ const MONSTER_INVINCIBLE_TIME = 1000; // 玩家无敌时间（新增）
 let playerInvincible = false;  // 玩家是否处于无敌状态
 let invincibleTimer = 0;      // 无敌时间计时器
 
+let paymentCheckInterval = null;
+
 // Initialize the game
 function init() {
     // 创建难度选择界面
@@ -241,31 +243,6 @@ function init() {
     const buyCoinsBtn = document.getElementById('buy-coins-btn');
     const paymentModal = document.getElementById('payment-modal');
     const closeModalBtn = document.getElementById('close-modal-btn');
-
-    // 检查URL中是否有支付成功的参数
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('payment') === 'success') {
-        // 支付成功
-        coins += 1000;
-        updateCoins();
-        
-        // 显示购买成功动画
-        coinPopups.push({
-            x: canvas.width - 150,
-            y: 60,
-            value: '+1000',
-            age: 0,
-            color: '#FFD700',
-            symbol: '💰',
-            type: 'success'
-        });
-
-        // 自动关闭支付弹窗
-        paymentModal.style.display = 'none';
-
-        // 清除URL参数
-        window.history.replaceState({}, document.title, window.location.pathname);
-    }
 
     buyCoinsBtn.addEventListener('click', () => {
         paymentModal.style.display = 'flex';
@@ -670,6 +647,23 @@ function setupControls() {
     document.getElementById('down-btn').addEventListener('touchend', () => keys.down = false);
     document.getElementById('down-btn').addEventListener('mousedown', () => keys.down = true);
     document.getElementById('down-btn').addEventListener('mouseup', () => keys.down = false);
+
+    // 添加大跳按钮事件监听
+    const superJumpBtn = document.getElementById('super-jump-btn');
+    superJumpBtn.addEventListener('touchstart', handleSuperJump);
+    superJumpBtn.addEventListener('mousedown', handleSuperJump);
+
+    function handleSuperJump() {
+        if (coins >= SUPER_JUMP_COST && !player.isJumping) {
+            player.velocityY = JUMP_FORCE * SUPER_JUMP_MULTIPLIER;
+            coins -= SUPER_JUMP_COST;
+            addSuperJumpEffect();
+            showCostEffect();
+            updateCoins();
+        } else if (coins < SUPER_JUMP_COST) {
+            showInsufficientCoinsEffect();
+        }
+    }
     
     // Keyboard controls
     window.addEventListener('keydown', (e) => {
@@ -1762,5 +1756,54 @@ function showCostEffect() {
 function shouldSpawnTreasure(platformCount) {
     return platformCount % TREASURE_SPAWN_INTERVALS[currentDifficulty] === 0;
 }
+
+// 添加支付成功处理函数
+function handlePaymentSuccess() {
+    // 支付成功，增加金币
+    coins += 1000;
+    updateCoins();
+    
+    // 显示购买成功动画
+    coinPopups.push({
+        x: canvas.width - 150,
+        y: 60,
+        value: '+1000',
+        age: 0,
+        color: '#FFD700',
+        symbol: '💰',
+        type: 'success'
+    });
+
+    // 自动关闭支付弹窗
+    const paymentModal = document.getElementById('payment-modal');
+    if (paymentModal) {
+        paymentModal.style.display = 'none';
+    }
+}
+
+// 监听URL变化来处理支付成功
+window.addEventListener('load', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('payment') === 'success') {
+        handlePaymentSuccess();
+        // 清除URL参数
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+});
+
+// 添加URL变化监听
+let lastGameUrl = location.href;
+new MutationObserver(() => {
+    const url = location.href;
+    if (url !== lastGameUrl) {
+        lastGameUrl = url;
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('payment') === 'success') {
+            handlePaymentSuccess();
+            // 清除URL参数
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }
+}).observe(document, {subtree: true, childList: true});
 
 // ... 

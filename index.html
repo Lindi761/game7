@@ -17,13 +17,16 @@
             <!-- Game canvas will be inserted here by JavaScript -->
         </div>
         <div class="controls-container">
-            <div class="direction-controls">
-                <button id="left-btn" class="control-btn">←</button>
-                <button id="right-btn" class="control-btn">→</button>
+            <div class="left-controls">
+                <button id="super-jump-btn" class="control-btn super-jump">大跳</button>
             </div>
-            <div class="action-controls">
-                <button id="up-btn" class="control-btn">↑</button>
-                <button id="down-btn" class="control-btn">↓</button>
+            <div class="right-controls">
+                <button id="up-btn" class="control-btn direction-btn">↑</button>
+                <div class="middle-row">
+                    <button id="left-btn" class="control-btn direction-btn">←</button>
+                    <button id="right-btn" class="control-btn direction-btn">→</button>
+                </div>
+                <button id="down-btn" class="control-btn direction-btn">↓</button>
             </div>
         </div>
     </div>
@@ -32,12 +35,80 @@
         <div class="modal-content">
             <h2>购买金币</h2>
             <p>1元 = 1000金币</p>
-            <a href="https://buy.stripe.com/test_aEU5m66YeaTDgNi4gh?success_url=${window.location.origin}%3Fpayment%3Dsuccess%26session_id%3D{CHECKOUT_SESSION_ID}&cancel_url=${window.location.origin}" target="_blank" class="payment-link">
-                <button class="stripe-btn">点击支付</button>
-            </a>
+            <div id="payment-button-container">
+                <button id="stripe-payment-btn" class="stripe-btn">点击支付</button>
+            </div>
             <button id="close-modal-btn" class="close-btn">关闭</button>
         </div>
     </div>
+    <script src="https://js.stripe.com/v3/"></script>
+    <script>
+        // 初始化Stripe
+        const stripe = Stripe('your_publishable_key');
+
+        // 支付按钮点击事件
+        document.getElementById('stripe-payment-btn').addEventListener('click', async function() {
+            try {
+                // 创建 checkout session
+                const response = await fetch('/create-checkout-session', {
+                    method: 'POST',
+                });
+                const session = await response.json();
+                
+                // 重定向到 Stripe Checkout 页面
+                const result = await stripe.redirectToCheckout({
+                    sessionId: session.id
+                });
+
+                if (result.error) {
+                    alert('支付发生错误，请重试');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('支付发生错误，请重试');
+            }
+        });
+
+        // 检查支付状态
+        window.addEventListener('load', async function() {
+            // 获取URL中的session_id
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionId = urlParams.get('session_id');
+            
+            if (sessionId) {
+                try {
+                    // 检查支付状态
+                    const response = await fetch(`/check-session-status?session_id=${sessionId}`);
+                    const result = await response.json();
+                    
+                    if (result.status === 'complete') {
+                        // 支付成功
+                        window.coins += 1000;
+                        
+                        // 显示成功动画
+                        const coinPopups = window.coinPopups || [];
+                        coinPopups.push({
+                            x: window.canvas.width - 150,
+                            y: 60,
+                            value: '+1000',
+                            age: 0,
+                            color: '#FFD700',
+                            symbol: '💰',
+                            type: 'success'
+                        });
+                        
+                        // 更新金币显示
+                        window.updateCoins();
+                        
+                        // 清除URL参数
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                }
+            }
+        });
+    </script>
     <script src="game.js"></script>
 </body>
 </html> 

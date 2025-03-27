@@ -1,53 +1,52 @@
 const express = require('express');
-const stripe = require('stripe')('your_stripe_secret_key');
+const stripe = require('stripe')('your_secret_key');
 const app = express();
 
-app.use(express.json());
 app.use(express.static('public'));
+app.use(express.json());
 
-// 检查支付状态
-app.post('/check-payment-status', async (req, res) => {
+// 创建支付会话
+app.post('/create-checkout-session', async (req, res) => {
     try {
-        const { session_id } = req.body;
-        
-        // 获取支付会话信息
-        const session = await stripe.checkout.sessions.retrieve(session_id);
-        
-        // 检查支付状态
-        if (session.payment_status === 'paid') {
-            res.json({ status: 'success' });
-        } else {
-            res.json({ status: 'pending' });
-        }
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [{
+                price_data: {
+                    currency: 'cny',
+                    product_data: {
+                        name: '游戏金币',
+                        description: '1000金币',
+                    },
+                    unit_amount: 100, // 1元 = 100分
+                },
+                quantity: 1,
+            }],
+            mode: 'payment',
+            success_url: `${req.headers.origin}?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${req.headers.origin}`,
+        });
+
+        res.json({ id: session.id });
     } catch (error) {
-        console.error('支付状态检查错误:', error);
-        res.status(500).json({ status: 'error', message: error.message });
+        console.error('Error:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
-// Stripe webhook处理
-app.post('/webhook', express.raw({type: 'application/json'}), async (req, res) => {
-    const sig = req.headers['stripe-signature'];
-    let event;
-
+// 检查支付会话状态
+app.get('/check-session-status', async (req, res) => {
     try {
-        event = stripe.webhooks.constructEvent(req.body, sig, 'your_webhook_secret');
-    } catch (err) {
-        res.status(400).send(`Webhook Error: ${err.message}`);
-        return;
+        const session = await stripe.checkout.sessions.retrieve(req.query.session_id);
+        res.json({
+            status: session.payment_status === 'paid' ? 'complete' : 'pending'
+        });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ error: error.message });
     }
-
-    // 处理支付成功事件
-    if (event.type === 'checkout.session.completed') {
-        const session = event.data.object;
-        // 在这里可以添加更多的支付成功处理逻辑
-        console.log('支付成功:', session);
-    }
-
-    res.json({received: true});
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`服务器运行在端口 ${PORT}`);
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
 }); 
