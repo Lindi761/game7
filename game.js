@@ -156,6 +156,27 @@ let paymentCheckInterval = null;
 
 // Initialize the game
 function init() {
+    // 禁用复制粘贴功能
+    document.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+    });
+    
+    document.addEventListener('copy', function(e) {
+        e.preventDefault();
+    });
+    
+    document.addEventListener('paste', function(e) {
+        e.preventDefault();
+    });
+    
+    document.addEventListener('cut', function(e) {
+        e.preventDefault();
+    });
+    
+    document.addEventListener('selectstart', function(e) {
+        e.preventDefault();
+    });
+    
     // 创建难度选择界面
     const difficultyMenu = document.createElement('div');
     difficultyMenu.id = 'difficulty-menu';
